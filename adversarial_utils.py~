@@ -1,0 +1,46 @@
+import keras.backend as K
+import numpy as np
+from keras.layers import Activation, Lambda
+from keras.models import Model
+from six import iteritems
+
+from .backend import unpack_assignment, variable_key
+
+
+def build_gan(generator, discriminator, name="gan"):
+    """
+    Build GAN from generator and discriminator
+    Model is (z, x) -> (yfake, yreal)
+    :param generator: Model (z -> x)
+    :param discriminator: Model (x -> y)
+    :return: GAN model
+    """
+    yfake = Activation("linear", name="yfake")(discriminator(generator(generator.inputs)))
+    yreal = Activation("linear", name="yreal")(discriminator(discriminator.inputs))
+    model = Model(generator.inputs + discriminator.inputs, [yfake, yreal], name=name)
+    return model
+
+
+def eliminate_z(gan, latent_sampling):
+    """
+    Eliminate z from GAN using latent_sampling
+    :param gan: model with 2 inputs: z, x
+    :param latent_sampling: layer that samples z with same batch size as x
+    :return: Model x -> gan(latent_sampling(x), x)
+    """
+    x = gan.inputs[1]
+    z = latent_sampling(x)
+    model = Model(x, fix_names(gan([z, x]), gan.output_names), name=gan.name)
+    return model
+
+
+def simple_gan(generator, discriminator, latent_sampling):
+    # build basic gan
+    gan = build_gan(generator, discriminator)
+    # generate z on gpu, eliminate one input
+    if latent_sampling is None:
+        return gan
+    else:
+        return eliminate_z(gan, latent_sampling)
+
+
